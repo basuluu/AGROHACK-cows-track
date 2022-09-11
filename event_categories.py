@@ -78,8 +78,10 @@ EVENTS_BY_CATEGORIES = {
         EVENTS["MOVE"],
         EVENTS["WEIGHT"],
     ],
-    "ИСХОД": [
+    "ЛЕЧЕНИЕ ПОМОГЛО": [
         EVENTS["ЗДОРОВА"],
+    ],
+    "ИСХОД": [
         EVENTS["ПАЛА"],
         EVENTS["ПРОДАНА"],
     ],
