@@ -5,6 +5,9 @@
 3. Activate virtual env 
 `venv/bin/activate (Linux)` or 
 `./venv/Scripts/activate (Win)`
+Если будет вылезать ошибка, то дописать
+`Set-ExecutionPolicy Unrestricted -Scope Process` 
+
 4. `python3 -m ipykernel install --name=venv`
 5. `pip3 install -r requirements.txt`
 
