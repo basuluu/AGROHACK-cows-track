@@ -8,7 +8,7 @@ def digitize_event_category_col(dt):
 
 def convert_to_datetime(dt):
     dt_copy = dt.copy()
-    dt_copy['Дата рождения'] = pd.to_datetime(dt_copy['Дата рождения'], format="%d/%m/%Y")
-    dt_copy['Дата события'] = pd.to_datetime(dt_copy['Дата события'], format="%d/%m/%Y")
+    dt_copy['Дата рождения'] = pd.to_datetime(dt_copy['Дата рождения'], format="%m/%d/%Y").dt.date
+    dt_copy['Дата события'] = pd.to_datetime(dt_copy['Дата события'], format="%m/%d/%Y").dt.date
     return dt_copy
     
