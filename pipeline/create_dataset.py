@@ -187,6 +187,7 @@ def add_empty_protocol_columns(df):
             "PROTOCOL_STAGE_8",
             "PROTOCOL_STAGE_9",
             "PROTOCOL_STAGE_10",
+            "PROTOCOL_STAGE_11",
         ]
     ] = 0
     return df
@@ -216,6 +217,8 @@ def add_empty_udder_parts_number_column(df):
             "UDDER_PARTS_CURED_STAGE_9",
             "UDDER_PARTS_AFFECTED_STAGE_10",
             "UDDER_PARTS_CURED_STAGE_10",
+            "UDDER_PARTS_AFFECTED_STAGE_11",
+            "UDDER_PARTS_CURED_STAGE_11",
         ]
     ] = 0
     return df
@@ -226,7 +229,25 @@ def add_column_days_of_treatment(dataset, intervals):
         finish_date = interval["rows"].tail(1)["Дата события"].values[0]
         
         event_row_index = interval["start_event_row_index"]
-        dataset.at[event_row_index, "DAYS_OF_TREATMENT"] = (finish_date - start_date).days
+        days_of_treatment = (finish_date - start_date).days
+
+        # Ошибка. Слишком раннее завершение протокола. 
+        # Если далее (8 дней от 12.03) 
+        # животное не имеет мастита - ошибочно событие от 12.03.
+        if days_of_treatment < 8 and interval["is_positive_result"] == True:
+            dataset = dataset.drop(event_row_index)
+        else:
+            dataset.at[event_row_index, "DAYS_OF_TREATMENT"] = days_of_treatment
+
+
+    dataset["DAYS_OF_TREATMENT"] = dataset["DAYS_OF_TREATMENT"].astype("int")
+    return dataset
+
+def add_column_cow_full_years(dataset):
+    for index, row in dataset.iterrows():
+        full_years = (row["Дата события"] - row["Дата рождения"]).days // 365
+        dataset.at[index, "COW_FULL_YEARS"] = full_years
+    dataset["COW_FULL_YEARS"] = dataset["COW_FULL_YEARS"].astype("int")
     return dataset
 
 def main(df):
@@ -240,6 +261,7 @@ def main(df):
     dataset = add_empty_udder_parts_number_column(dataset)
     dataset = fill_protocol_and_udder_parts_columns(dataset, intervals)
     dataset = add_column_days_of_treatment(dataset, intervals)
+    dataset = add_column_cow_full_years(dataset)
     dataset.to_csv("test_protocols_order.csv")
 
 
