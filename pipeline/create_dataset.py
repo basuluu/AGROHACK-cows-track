@@ -23,8 +23,12 @@ def get_intervals_between_event_and_result_event(
     df = df[["Номер животного", "Дата события", "Событие", "Примечание события"]].copy()
     intervals = []
 
+    positive_note = ["МАСТИТ", "МАТСТИТ", "МАСТИТ", "МАСТИТ3", "МАСТ"]
+
     positive_result_events = event_categories.EVENTS_BY_CATEGORIES["ЛЕЧЕНИЕ ПОМОГЛО"]
     negative_result_events = event_categories.EVENTS_BY_CATEGORIES["ИСХОД"]
+
+    result_events_types = positive_result_events + negative_result_events
 
     for cow_id in df["Номер животного"].unique():
         df_cow_rows = df[df["Номер животного"] == cow_id].copy()
@@ -32,26 +36,38 @@ def get_intervals_between_event_and_result_event(
         event_dates = df_cow_rows[df_cow_rows["Событие"] == start_event][
             "Дата события"
         ].values
+        
+        finish_event_date = None
         for event_date in event_dates:
+            if finish_event_date is not None and event_date <= finish_event_date:
+                continue
+
             opened_range_date = event_date
             solved_range_date = event_date + timedelta(days=max_days_between)
             rows_in_date_range = df_cow_rows[
                 (df_cow_rows["Дата события"] >= opened_range_date)
                 & (df_cow_rows["Дата события"] <= solved_range_date)
             ]
-
+            
             result_events = rows_in_date_range[
-                df_cow_rows["Событие"].isin(
-                    positive_result_events + negative_result_events
-                )
+                df_cow_rows["Событие"].isin(result_events_types)
             ].sort_values("Дата события", ascending=True)
 
-            if not result_events.shape[0]:
+            finish_event_row = None
+            for index, row in result_events.iterrows():
+                if row["Событие"] in positive_result_events:
+                    if row["Примечание события"].upper() in positive_note:
+                        finish_event_row = row
+                        break
+                elif row["Событие"] in negative_result_events:
+                    finish_event_row = row
+                    break
+    
+            if finish_event_row is None:
                 continue
-
-            finish_event = result_events.head(1)
-            finish_event_type = finish_event["Событие"].values[0]
-            finish_event_date = finish_event["Дата события"].values[0]
+            
+            finish_event_type = finish_event_row["Событие"]
+            finish_event_date = finish_event_row["Дата события"]
 
             if include_finish_event:
                 rows_in_events_range = rows_in_date_range[
@@ -61,12 +77,18 @@ def get_intervals_between_event_and_result_event(
                 rows_in_events_range = rows_in_date_range[
                     rows_in_date_range["Дата события"] < finish_event_date
                 ]
-
+            
+            # Если все в один произошло, выкинуть
+            if len(rows_in_events_range["Дата события"].unique()) == 1: break
+            
             # Чтобы убрать ивенты которые произошли в тот же день, но раньше события Y
             # intervals строго начинается со строки события, на это же событие будет навешиваться остальное
             while rows_in_events_range.head(1)["Событие"].values[0] != start_event:
                 rows_in_events_range = rows_in_events_range.iloc[1:, :]
-
+                
+            while rows_in_events_range.tail(1)["Событие"].values[0] not in result_events_types:
+                rows_in_events_range = rows_in_events_range.iloc[:-1, :]
+            
             is_positive_result = (
                 True if finish_event_type in positive_result_events else False
             )
@@ -98,7 +120,7 @@ def get_udder_parts_affected(protocol_note):
         udder_parts_note = "1234"
     udder_parts_note = udder_parts_note.replace("?", "")
 
-    return {dig for dig in udder_parts_note if dig.isdigit()}
+    return [dig for dig in udder_parts_note if dig.isdigit()]
 
 
 def get_event_row_indexes(intervals):
@@ -117,21 +139,37 @@ def fill_protocol_and_udder_parts_columns(dataset, intervals):
 
     for interval in intervals:
         protocol_history = []
-        udder_parts_affected = set()
+        udder_parts_affected = []
         for index, row in interval["rows"].iterrows():
             note = row["Примечание события"]
             for protocol in possible_protocols:
                 if protocol in note:
-                    udder_parts_affected.update(get_udder_parts_affected(note))
+                    udder_parts_affected.append(get_udder_parts_affected(note))
                     protocol_history.append(protocol)
                     break
 
         event_row_index = interval["start_event_row_index"]
         for i, protocol in enumerate(protocol_history):
             protocol_id = event_categories.TREATMENT_PROTOCOLS[protocol]
-            dataset.at[event_row_index, f"PROTOCOL_TYPE_{i+1}"] = protocol_id
+            dataset.at[
+                event_row_index, f"PROTOCOL_STAGE_{i+1}"
+            ] = protocol_id
+        
+        for i, udder_parts in enumerate(udder_parts_affected):
+            if i != 0:
+                previous_parts = set(udder_parts_affected[i-1])
+                current_parts = set(udder_parts)
 
-        dataset.at[event_row_index, "udder_parts_affected"] = len(udder_parts_affected)
+                dataset.at[
+                    event_row_index, f"UDDER_PARTS_CURED_STAGE_{i+1}"
+                ] = len(previous_parts - current_parts)
+            else:
+                dataset.at[
+                    event_row_index, f"UDDER_PARTS_CURED_STAGE_{i+1}"
+                ] = 0
+            dataset.at[
+                event_row_index, f"UDDER_PARTS_AFFECTED_STAGE_{i+1}"
+            ] = len(udder_parts)
     return dataset
 
 
@@ -139,25 +177,57 @@ def add_empty_protocol_columns(df):
     possible_categories = get_mastit_possible_protocols()
     df[
         [
-            "PROTOCOL_TYPE_1",
-            "PROTOCOL_TYPE_2",
-            "PROTOCOL_TYPE_3",
-            "PROTOCOL_TYPE_4",
-            "PROTOCOL_TYPE_5",
-            "PROTOCOL_TYPE_6",
-            "PROTOCOL_TYPE_7",
-            "PROTOCOL_TYPE_8",
-            "PROTOCOL_TYPE_9",
-            "PROTOCOL_TYPE_10",
+            "PROTOCOL_STAGE_1",
+            "PROTOCOL_STAGE_2",
+            "PROTOCOL_STAGE_3",
+            "PROTOCOL_STAGE_4",
+            "PROTOCOL_STAGE_5",
+            "PROTOCOL_STAGE_6",
+            "PROTOCOL_STAGE_7",
+            "PROTOCOL_STAGE_8",
+            "PROTOCOL_STAGE_9",
+            "PROTOCOL_STAGE_10",
         ]
     ] = 0
     return df
 
 
 def add_empty_udder_parts_number_column(df):
-    df[["udder_parts_affected"]] = 0
+
+    df[
+        [
+            "UDDER_PARTS_AFFECTED_STAGE_1",
+            "UDDER_PARTS_CURED_STAGE_1",
+            "UDDER_PARTS_AFFECTED_STAGE_2",
+            "UDDER_PARTS_CURED_STAGE_2",
+            "UDDER_PARTS_AFFECTED_STAGE_3",
+            "UDDER_PARTS_CURED_STAGE_3",
+            "UDDER_PARTS_AFFECTED_STAGE_4",
+            "UDDER_PARTS_CURED_STAGE_4",
+            "UDDER_PARTS_AFFECTED_STAGE_5",
+            "UDDER_PARTS_CURED_STAGE_5",
+            "UDDER_PARTS_AFFECTED_STAGE_6",
+            "UDDER_PARTS_CURED_STAGE_6",
+            "UDDER_PARTS_AFFECTED_STAGE_7",
+            "UDDER_PARTS_CURED_STAGE_7",
+            "UDDER_PARTS_AFFECTED_STAGE_8",
+            "UDDER_PARTS_CURED_STAGE_8",
+            "UDDER_PARTS_AFFECTED_STAGE_9",
+            "UDDER_PARTS_CURED_STAGE_9",
+            "UDDER_PARTS_AFFECTED_STAGE_10",
+            "UDDER_PARTS_CURED_STAGE_10",
+        ]
+    ] = 0
     return df
 
+def add_column_days_of_treatment(dataset, intervals):
+    for interval in intervals:
+        start_date = interval["rows"].head(1)["Дата события"].values[0]
+        finish_date = interval["rows"].tail(1)["Дата события"].values[0]
+        
+        event_row_index = interval["start_event_row_index"]
+        dataset.at[event_row_index, "DAYS_OF_TREATMENT"] = (finish_date - start_date).days
+    return dataset
 
 def main(df):
     intervals = get_intervals_between_event_and_result_event(
@@ -169,6 +239,7 @@ def main(df):
     dataset = add_empty_protocol_columns(dataset)
     dataset = add_empty_udder_parts_number_column(dataset)
     dataset = fill_protocol_and_udder_parts_columns(dataset, intervals)
+    dataset = add_column_days_of_treatment(dataset, intervals)
     dataset.to_csv("test_protocols_order.csv")
 
 
