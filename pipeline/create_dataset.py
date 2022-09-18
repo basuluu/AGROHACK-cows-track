@@ -18,15 +18,12 @@ import filter_rows
 #                             можно будет разбить колонку исхода
 # },]
 def get_intervals_between_event_and_result_event(
-    df, start_event, max_days_between=100, include_finish_event=True
+    df, start_event, positive_note=[], negative_note=[],
+    positive_result_events=[], negative_result_events=[], 
+    max_days_between=100, include_finish_event=True,
 ):
     df = df[["Номер животного", "Дата события", "Событие", "Примечание события"]].copy()
     intervals = []
-
-    positive_note = ["МАСТИТ", "МАТСТИТ", "МАСТИТ", "МАСТИТ3", "МАСТ"]
-
-    positive_result_events = event_categories.EVENTS_BY_CATEGORIES["ЛЕЧЕНИЕ ПОМОГЛО"]
-    negative_result_events = event_categories.EVENTS_BY_CATEGORIES["ИСХОД"]
 
     result_events_types = positive_result_events + negative_result_events
 
@@ -290,17 +287,27 @@ def add_columns_about_cow_relatives(dataset):
 
 
 def main(df):
-    intervals = get_intervals_between_event_and_result_event(
-        df, event_categories.EVENTS["МАСТИТ"]
+    MASTIT_POSITIVE_NOTE = ["МАСТИТ", "МАТСТИТ", "МАСТИТ", "МАСТИТ3", "МАСТ"]
+
+    MASTIT_POSITIVE_RESULT_EVENTS = event_categories.EVENTS_BY_CATEGORIES["ЛЕЧЕНИЕ ПОМОГЛО"]
+    MASTIT_NEGATIVE_RESULT_EVENTS = event_categories.EVENTS_BY_CATEGORIES["ИСХОД"]
+
+    mastit_intervals = get_intervals_between_event_and_result_event(
+        df, event_categories.EVENTS["МАСТИТ"],
+        positive_note=MASTIT_POSITIVE_NOTE,
+        positive_result_events=MASTIT_POSITIVE_RESULT_EVENTS,
+        negative_result_events=MASTIT_NEGATIVE_RESULT_EVENTS,
+        max_days_between=100, include_finish_event=True,
     )
-    indexes = get_event_row_indexes(intervals)
+    indexes = get_event_row_indexes(mastit_intervals)
     dataset = filter_rows.filter_rows_by_indexes(df, indexes)
 
     dataset = add_empty_protocol_columns(dataset)
     dataset = add_empty_udder_parts_number_column(dataset)
-    dataset = fill_protocol_and_udder_parts_columns(dataset, intervals)
-    dataset = add_column_days_of_treatment(dataset, intervals)
+    dataset = fill_protocol_and_udder_parts_columns(dataset, mastit_intervals)
+    dataset = add_column_days_of_treatment(dataset, mastit_intervals)
     dataset = add_column_cow_full_years(dataset)
+    dataset = add_columns_about_cow_relatives(dataset)
     dataset.to_csv("test_protocols_order.csv")
 
 
