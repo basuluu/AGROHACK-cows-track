@@ -250,6 +250,45 @@ def add_column_cow_full_years(dataset):
     dataset["COW_FULL_YEARS"] = dataset["COW_FULL_YEARS"].astype("int")
     return dataset
 
+def add_columns_about_cow_relatives(dataset):
+    relatives_data = pd.read_csv("../Предки utf8.csv", sep=";")
+
+    relatives_data = relatives_data.fillna('0')
+    relatives_data = relatives_data.replace('nan', '0')
+    relatives_data = relatives_data.replace('', '0')
+    relatives_data = relatives_data.replace('Итого:25498', '0')
+    relatives_data = relatives_data.replace('-         ', '0')
+
+    relatives_data["Номер Матери"] = relatives_data["Номер Матери"].astype("int")
+    relatives_data["Номер животного"] = relatives_data["Номер животного"].astype("int", errors='ignore')
+
+    dataset["MOTHER_ID"] = 0
+    dataset["FATHER_ID"] = ''
+    dataset["MOTHER_FATHER_ID"] = ''
+
+    for index, row in dataset.iterrows():
+        father_id = ''
+        mother_id = 0
+        mother_father_id = ''
+
+        cow_id = row["Номер животного"]
+        if relatives_data[relatives_data["Номер животного"] == cow_id].empty:
+            if not relatives_data[relatives_data["Номер Матери"] == cow_id].empty:
+                potential_father_id = list(
+                    relatives_data[relatives_data["Номер Матери"] == cow_id]['Отец Матери'].unique()
+                )
+                father_id = potential_father_id[0]
+        else:
+            for _, rel_row in relatives_data[relatives_data["Номер животного"] == cow_id].iterrows():
+                mother_id = rel_row['Номер Матери']
+                father_id = rel_row["Код Отца"]
+                mother_father_id = rel_row["Отец Матери"]
+
+        dataset.at[index, "MOTHER_ID"] = mother_id
+        dataset.at[index, "FATHER_ID"] = father_id
+        dataset.at[index, "MOTHER_FATHER_ID"] = mother_father_id
+
+
 def main(df):
     intervals = get_intervals_between_event_and_result_event(
         df, event_categories.EVENTS["МАСТИТ"]
