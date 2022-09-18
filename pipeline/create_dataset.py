@@ -313,6 +313,16 @@ def add_column_is_cow_on_hormones(df, gormoni_intervals):
     return df
 
 
+def add_column_calv_result(df):
+    df["CALV_RESULT_TWO_CHILDREN"] = df["Результат отела"].apply(
+        lambda n: 1 if len(str(n)) == 4 else 0
+    )
+    df["CALV_RESULT_AT_LEAST_ONE_DEAD"] = df["Результат отела"].apply(
+        lambda n: 1 if "D" in str(n) else 0
+    )
+    return df
+
+
 def main(df):
     GORMONI_POSITIVE_RESULT_EVENTS = [
         event_categories.EVENTS["СТЕЛН"],
@@ -332,7 +342,6 @@ def main(df):
         max_days_between=200,
     )
     df = add_column_is_cow_on_hormones(df, gormoni_intervals)
-
     mastit_intervals = get_intervals_between_event_and_result_event(
         df,
         event_categories.EVENTS["МАСТИТ"],
@@ -351,6 +360,7 @@ def main(df):
     dataset = add_column_days_of_treatment(dataset, mastit_intervals)
     dataset = add_column_cow_full_years(dataset)
     dataset = add_columns_about_cow_relatives(dataset)
+    dataset = add_column_calv_result(dataset)
     dataset.to_csv("test_protocols_order.csv")
 
 
