@@ -323,6 +323,15 @@ def add_column_calv_result(df):
     return df
 
 
+def add_column_is_positive_result(dataset, intervals):
+    dataset["IS_POSITIVE_RESULT"] = 0
+    for interval in intervals:
+        if interval["is_positive_result"]:
+            row_index = interval["start_event_row_index"]
+            dataset.at[row_index, "IS_POSITIVE_RESULT"] = 1        
+    return dataset
+
+
 def main(df):
     GORMONI_POSITIVE_RESULT_EVENTS = [
         event_categories.EVENTS["СТЕЛН"],
@@ -356,6 +365,7 @@ def main(df):
 
     dataset = add_empty_protocol_columns(dataset)
     dataset = add_empty_udder_parts_number_column(dataset)
+    dataset = add_column_is_positive_result(dataset, mastit_intervals)
     dataset = fill_protocol_and_udder_parts_columns(dataset, mastit_intervals)
     dataset = add_column_days_of_treatment(dataset, mastit_intervals)
     dataset = add_column_cow_full_years(dataset)
