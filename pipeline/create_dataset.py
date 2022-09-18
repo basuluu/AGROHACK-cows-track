@@ -1,3 +1,5 @@
+import enum
+from errno import ENETUNREACH
 import pandas as pd
 
 from datetime import timedelta
@@ -134,6 +136,15 @@ def get_udder_parts_affected(protocol_note):
     return [dig for dig in udder_parts_note if dig.isdigit()]
 
 
+def get_mastit_row_indexes(intervals):
+    indexes = set()
+    for interval in intervals:
+        for index, row in interval["rows"].iterrows():
+            if is_protocol_row(row["Примечание события"]):
+                indexes.add(index)
+    return indexes
+
+
 def get_event_row_indexes(intervals):
     return [interval["start_event_row_index"] for interval in intervals]
 
@@ -144,6 +155,12 @@ def get_mastit_possible_protocols():
     ]
     return possible_protocols
 
+def is_protocol_row(note):
+    possible_protocols = get_mastit_possible_protocols()
+    for protocol in possible_protocols:
+        if protocol in note: return True
+    return False
+    
 
 def fill_protocol_and_udder_parts_columns(dataset, intervals):
     possible_protocols = get_mastit_possible_protocols()
@@ -151,32 +168,37 @@ def fill_protocol_and_udder_parts_columns(dataset, intervals):
     for interval in intervals:
         protocol_history = []
         udder_parts_affected = []
+        indexes = []
         for index, row in interval["rows"].iterrows():
             note = row["Примечание события"]
             for protocol in possible_protocols:
                 if protocol in note:
                     udder_parts_affected.append(get_udder_parts_affected(note))
                     protocol_history.append(protocol)
+                    indexes.append(index)
                     break
 
-        event_row_index = interval["start_event_row_index"]
-        for i, protocol in enumerate(protocol_history):
-            protocol_id = event_categories.TREATMENT_PROTOCOLS[protocol]
-            dataset.at[event_row_index, f"PROTOCOL_STAGE_{i+1}"] = protocol_id
+        for i, index in enumerate(indexes):
+            actual_protocol_history = protocol_history[:i+1]
+            actual_udder_parts_affected = udder_parts_affected[:i+1]
 
-        for i, udder_parts in enumerate(udder_parts_affected):
-            if i != 0:
-                previous_parts = set(udder_parts_affected[i - 1])
-                current_parts = set(udder_parts)
+            for j, protocol in enumerate(actual_protocol_history):
+                protocol_id = event_categories.TREATMENT_PROTOCOLS[protocol]
+                dataset.at[index, f"PROTOCOL_STAGE_{j+1}"] = protocol_id
 
-                dataset.at[event_row_index, f"UDDER_PARTS_CURED_STAGE_{i+1}"] = len(
-                    previous_parts - current_parts
+            for j, udder_parts in enumerate(actual_udder_parts_affected):
+                if j != 0:
+                    previous_parts = set(actual_udder_parts_affected[j - 1])
+                    current_parts = set(udder_parts)
+                    dataset.at[index, f"UDDER_PARTS_CURED_STAGE_{j+1}"] = len(
+                        previous_parts - current_parts
+                    )
+                else:
+                    dataset.at[index, f"UDDER_PARTS_CURED_STAGE_{j+1}"] = 0
+                dataset.at[index, f"UDDER_PARTS_AFFECTED_STAGE_{j+1}"] = len(
+                    udder_parts
                 )
-            else:
-                dataset.at[event_row_index, f"UDDER_PARTS_CURED_STAGE_{i+1}"] = 0
-            dataset.at[event_row_index, f"UDDER_PARTS_AFFECTED_STAGE_{i+1}"] = len(
-                udder_parts
-            )
+
     return dataset
 
 
@@ -236,16 +258,18 @@ def add_column_days_of_treatment(dataset, intervals):
         start_date = interval["rows"].head(1)["Дата события"].values[0]
         finish_date = interval["rows"].tail(1)["Дата события"].values[0]
 
-        event_row_index = interval["start_event_row_index"]
+        indexes = get_mastit_row_indexes([interval])
         days_of_treatment = (finish_date - start_date).days
 
         # Ошибка. Слишком раннее завершение протокола.
         # Если далее (8 дней от 12.03)
         # животное не имеет мастита - ошибочно событие от 12.03.
         if days_of_treatment < 8 and interval["is_positive_result"] == True:
-            dataset = dataset.drop(event_row_index)
+            for index in indexes:
+                dataset = dataset.drop(index)
         else:
-            dataset.at[event_row_index, "DAYS_OF_TREATMENT"] = days_of_treatment
+            for index in indexes: 
+                dataset.at[index, "DAYS_OF_TREATMENT"] = days_of_treatment
 
     dataset["DAYS_OF_TREATMENT"] = dataset["DAYS_OF_TREATMENT"].astype("int")
     return dataset
@@ -327,8 +351,9 @@ def add_column_is_positive_result(dataset, intervals):
     dataset["IS_POSITIVE_RESULT"] = 0
     for interval in intervals:
         if interval["is_positive_result"]:
-            row_index = interval["start_event_row_index"]
-            dataset.at[row_index, "IS_POSITIVE_RESULT"] = 1        
+            indexes = get_mastit_row_indexes([interval])
+            for index in indexes:
+                dataset.at[index, "IS_POSITIVE_RESULT"] = 1        
     return dataset
 
 
@@ -360,7 +385,7 @@ def main(df):
         max_days_between=100,
         include_finish_event=True,
     )
-    indexes = get_event_row_indexes(mastit_intervals)
+    indexes = get_mastit_row_indexes(mastit_intervals)
     dataset = filter_rows.filter_rows_by_indexes(df, indexes)
 
     dataset = add_empty_protocol_columns(dataset)
